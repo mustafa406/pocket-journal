@@ -1,5 +1,5 @@
-/* Pocket Journal — Service Worker v1 */
-const CACHE = 'pocket-journal-v1';
+/* Pocket Journal — Service Worker v2 */
+const CACHE = 'pocket-journal-v2';
 const ASSETS = [
   './index.html',
   './manifest.json',

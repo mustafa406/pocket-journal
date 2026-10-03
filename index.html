@@ -264,6 +264,17 @@
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 4px; }
+  .cm-cat{border:1.5px solid var(--card-border);border-radius:12px;margin-bottom:10px;background:var(--bg);overflow:hidden}
+  .cm-head{display:flex;align-items:center;gap:6px;padding:10px 12px;background:var(--bg2);flex-wrap:wrap}
+  .cm-name{font-weight:600;font-size:14px;flex:1;min-width:120px}
+  .cm-tag{font-size:9px;text-transform:uppercase;letter-spacing:.08em;background:var(--accent-light);color:var(--accent);border-radius:20px;padding:2px 7px}
+  .cm-item{display:flex;align-items:center;gap:6px;padding:7px 12px;border-top:1px solid var(--card-border);font-size:13px}
+  .cm-item span.n{flex:1}.cm-item select{font-size:12px;max-width:140px;padding:3px}
+  .cm-btn{font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;border:1px solid var(--card-border);color:var(--ink2);background:var(--card)}
+  .cm-btn.red{color:var(--red);border-color:var(--red)}.cm-btn.acc{color:var(--accent);border-color:var(--accent)}
+  .cm-add{width:100%;padding:11px;border-radius:10px;background:var(--ink);color:#fff;font-weight:600;margin-bottom:14px}
+  .cm-sec{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin:14px 0 6px;font-weight:600}
+  #desc-save-lib{display:none;margin-top:6px}
 </style>
 </head>
 <body>
@@ -277,6 +288,7 @@
         <div class="header-title">Pocket Journal</div>
       </div>
       <div class="header-actions">
+        <button class="header-back" id="btn-cats" title="Categories" style="font-size:17px;">🏷️</button>
         <button class="header-back" id="btn-backup" title="Backup & Restore" style="font-size:17px;">🗂️</button>
       </div>
     </div>
@@ -405,7 +417,9 @@
       </div>
       <div class="field">
         <label>Description</label>
-        <input type="text" id="f-desc" placeholder="e.g. Monthly salary, Grocery run…" maxlength="80" />
+        <input type="text" id="f-desc" list="desc-list" placeholder="Pick a preset or type your own…" maxlength="80" autocomplete="off" />
+        <datalist id="desc-list"></datalist>
+        <button class="cm-btn acc" id="desc-save-lib" type="button"></button>
       </div>
       <div class="field">
         <label>Date</label>
@@ -476,6 +490,15 @@
   </div>
 </div>
 
+<!-- MODAL: CATEGORY MANAGER -->
+<div class="modal-overlay" id="cats-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header"><div class="modal-title">🏷️ Category Library</div><button class="modal-close" id="cats-close">×</button></div>
+    <div class="modal-body" id="cats-body"></div>
+  </div>
+</div>
+
 <!-- CONFIRM DELETE -->
 <div class="confirm-overlay" id="confirm-overlay">
   <div class="confirm-box">
@@ -497,16 +520,53 @@
    POCKET JOURNAL — Expense Tracker
 ═══════════════════════════════════════════════════ */
 
-const CATEGORIES = {
-  income:  ['💼 Salary','💻 Freelance','📦 Business','💰 Investment','🎁 Gift','🏦 Savings','📝 Other'],
-  expense: ['🍔 Food','🏠 Rent','🚗 Transport','💊 Health','🛒 Groceries','🎓 Education','👗 Clothing','🎮 Entertainment','💡 Utilities','📞 Bills','🛍️ Shopping','📝 Other']
-};
+/* ── Category Library (stored inside the main data object as _categoryLibrary, so it travels with JSON backups) ──
+   Transactions still store category as "icon name" and description as free text, so old data/backups stay valid.
+   Item prefixes: "i:" = income-only preset, "e:" = expense-only preset, none = either. */
+const SEED_LIB = [
+  ['🍔','Food','expense','normal',['Mess','Restaurant','Fast Food','Snacks','Tea/Coffee','Food Delivery','Other Food']],
+  ['🚗','Transport','expense','normal',['InDrive','Fuel','Bus','Rickshaw','Toll','Vehicle Maintenance','Other Transport']],
+  ['📞','Mobile & Telecom','expense','normal',['Mobile Load','Mobile Bill','Internet','SMS Charges','Other Telecom']],
+  ['🎓','Education & Fees','expense','normal',['University/College Fees','IBCC','Research Paper','Books','Other Education']],
+  ['💊','Health','expense','normal',['Medicine','Dentist','Doctor','Medical Tests','Other Health']],
+  ['🛍️','Shopping','expense','normal',['Clothes','Electronics','Accessories','Personal Items','Other Shopping']],
+  ['🎮','Entertainment','expense','normal',['Games','PC/Computer Entertainment','Movies','Other Entertainment']],
+  ['💈','Personal Care','expense','normal',['Haircut','Toiletries','Other Personal Care']],
+  ['🏦','Bank & Financial Charges','expense','normal',['Bank Charges','ATM Charges','SMS Alert Charges','Other Bank Charges']],
+  ['🏛️','Government / Official Fees','expense','normal',['NADRA','Police Verification','Government Fees','Other Official Fees']],
+  ['🏍️','Vehicle','expense','normal',['Motorcycle','Tires','Repairs','Maintenance','Other Vehicle']],
+  ['🕌','Charity / Religious','expense','normal',['Masjid','Charity','Other Religious']],
+  ['👨‍👩‍👧','Family / Others','both','normal',['e:Money Given to Family','e:Money Spent for Someone Else','i:Reimbursement','Other People']],
+  ['🤝','Family Savings','both','family_savings',['e:Comette Contribution','i:Comette Received','Other Family Savings']],
+  ['🐷','Personal Savings','both','personal_savings',['Personal Savings','Emergency Fund','Goal Savings','Other Personal Savings']],
+  ['💸','Loans','both','loan',['i:Loan Received','e:Loan Repayment','e:Money Lent','i:Money Returned']],
+  ['💼','Salary & Work','income','normal',['Salary','Freelance','Business','Other Work Income']],
+  ['🎁','Gifts','income','normal',['Gift','Other Gift']],
+  ['💰','Investment','income','normal',['Investment Return','Other Investment']],
+  ['📝','Other','both','normal',['Other']]
+];
+const ROLE_LABEL = {family_savings:'Family savings',personal_savings:'Personal savings',loan:'Loan'};
+const uid = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const parseItem = x => x.startsWith('i:') ? {name:x.slice(2),type:'income'} : x.startsWith('e:') ? {name:x.slice(2),type:'expense'} : {name:x,type:'both'};
+function seedLib() { return {version:1, categories: SEED_LIB.map(([icon,name,type,role,items]) => ({id:uid(),icon,name,type,role,items:items.map(parseItem)}))}; }
+const yearKeys = d => Object.keys(d).filter(k => /^\d{4}$/.test(k));
+const catFull = c => c.icon + ' ' + c.name;
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const STORAGE_KEY = 'pocket_journal_data';
 
 // ── Storage ───────────────────────────────────────
 function loadData()  { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } }
 function saveData(d) { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }
+function getLib(data) { data = data || loadData(); if (!data._categoryLibrary) { data._categoryLibrary = seedLib(); saveData(data); } return data._categoryLibrary; }
+function mutateLib(fn) { const d = loadData(); getLib(d); fn(d._categoryLibrary, d); saveData(d); }
+// One-time safety copy of the raw data before the library is first added
+(function(){ try { const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw && !localStorage.getItem('pocket_journal_data_pre_library_backup') && !JSON.parse(raw)._categoryLibrary) localStorage.setItem('pocket_journal_data_pre_library_backup', raw);
+} catch {} })();
+function catsFor(type) { return getLib().categories.filter(c => c.type === type || c.type === 'both'); }
+function findCat(full) { return getLib().categories.find(c => catFull(c) === full); }
+function presetsFor(full, type) { const c = findCat(full); return c ? c.items.filter(i => i.type === 'both' || i.type === type) : []; }
+function countTx(pred) { return getAllTxs().filter(pred).length; }
 
 // ── Helpers ───────────────────────────────────────
 function fmt(n)      { return '₨ ' + Number(n).toLocaleString('en-PK', {maximumFractionDigits:0}); }
@@ -529,7 +589,7 @@ function calcStats(txs) {
 }
 function getAllTxs() {
   const data = loadData(); const all = [];
-  for (const year of Object.keys(data))
+  for (const year of yearKeys(data))
     for (const month of Object.keys(data[year]))
       getMonthTxs(data,year,month).forEach(t => all.push({...t,year,month}));
   return all;
@@ -560,7 +620,7 @@ function showScreen(id) {
 function renderDashboard() {
   const data = loadData();
   const entries = [];
-  for (const year of Object.keys(data).sort((a,b)=>b-a))
+  for (const year of yearKeys(data).sort((a,b)=>b-a))
     for (const month of Object.keys(data[year]).sort((a,b)=>MONTHS.indexOf(b)-MONTHS.indexOf(a)))
       entries.push({year,month});
 
@@ -763,19 +823,22 @@ function openEdit(id) {
   document.getElementById('f-amount').value=tx.amount;
   document.getElementById('f-desc').value=tx.description;
   document.getElementById('f-date').value=tx.date;
-  setType(tx.type);
-  setTimeout(()=>{ document.getElementById('f-category').value=tx.category; },0);
+  setType(tx.type, tx.category);
+  document.getElementById('f-category').value=tx.category; refreshDesc();
   document.getElementById('modal-overlay').classList.add('open');
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
-function setType(type) {
+function setType(type, keep) {
   currentType=type;
   document.getElementById('toggle-income').classList.toggle('active',type==='income');
   document.getElementById('toggle-income').classList.toggle('income',type==='income');
   document.getElementById('toggle-expense').classList.toggle('active',type==='expense');
   document.getElementById('toggle-expense').classList.toggle('expense',type==='expense');
   document.getElementById('submit-btn').className='submit-btn '+type;
-  document.getElementById('f-category').innerHTML=CATEGORIES[type].map(c=>`<option value="${c}">${c}</option>`).join('');
+  const opts = catsFor(type).map(catFull);
+  if (keep && !opts.includes(keep)) opts.push(keep); // legacy category on an old transaction: keep it selectable
+  document.getElementById('f-category').innerHTML=opts.map(c=>`<option value="${c}">${c}${findCat(c)?'':' (legacy)'}</option>`).join('');
+  refreshDesc();
 }
 function submitForm() {
   const amount=parseFloat(document.getElementById('f-amount').value);
@@ -797,6 +860,110 @@ function submitForm() {
     showToast('Entry added ✓');
   }
   saveData(data); closeModal(); renderMonthDetail();
+}
+
+// ══════════════════════════════════════════════════
+//  DESCRIPTION PRESETS (searchable list + free typing)
+// ══════════════════════════════════════════════════
+function refreshDesc() {
+  const cat = document.getElementById('f-category').value;
+  document.getElementById('desc-list').innerHTML = presetsFor(cat, currentType).map(i => `<option value="${i.name.replace(/"/g,'&quot;')}">`).join('');
+  const v = document.getElementById('f-desc').value.trim(), btn = document.getElementById('desc-save-lib');
+  const c = findCat(cat);
+  if (!v || !c || c.items.some(i => i.name.toLowerCase() === v.toLowerCase())) { btn.style.display = 'none'; return; }
+  const n = countTx(t => t.category === cat && (t.description||'').toLowerCase() === v.toLowerCase());
+  btn.textContent = `＋ Save "${v}" to ${c.name} library` + (n >= 2 ? ` (used ${n}×)` : '');
+  btn.style.display = 'inline-block';
+}
+function saveDescToLib() {
+  const cat = document.getElementById('f-category').value, v = document.getElementById('f-desc').value.trim();
+  mutateLib(lib => { const c = lib.categories.find(x => catFull(x) === cat); if (c && !c.items.some(i => i.name.toLowerCase() === v.toLowerCase())) c.items.push({name:v, type:currentType}); });
+  refreshDesc(); showToast('Added to library ✓');
+}
+
+// ══════════════════════════════════════════════════
+//  CATEGORY MANAGER
+// ══════════════════════════════════════════════════
+function renameTxs(pred, patch) { // applies patch to matching transactions in all months; returns count
+  const d = loadData(); let n = 0;
+  yearKeys(d).forEach(y => Object.keys(d[y]).forEach(m => (d[y][m].transactions||[]).forEach(t => { if (pred(t)) { Object.assign(t, patch); n++; } })));
+  if (n) saveData(d); return n;
+}
+function splitIcon(str) { const m = str.trim().match(/^(\S+)\s+(.+)$/); return m && !/[A-Za-z0-9]/.test(m[1]) ? {icon:m[1], name:m[2].trim()} : {icon:null, name:str.trim()}; }
+function renderCats() {
+  const lib = getLib(), body = document.getElementById('cats-body');
+  const esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  let h = `<button class="cm-add" data-a="addcat">＋ Add Main Category</button>`;
+  lib.categories.forEach(c => {
+    h += `<div class="cm-cat"><div class="cm-head"><span class="cm-name">${c.icon} ${esc(c.name)}</span>
+      ${ROLE_LABEL[c.role]?`<span class="cm-tag">${ROLE_LABEL[c.role]}</span>`:''}<span class="cm-tag">${c.type}</span>
+      <button class="cm-btn" data-a="renamecat" data-c="${c.id}">Rename</button><button class="cm-btn acc" data-a="additem" data-c="${c.id}">＋ Item</button><button class="cm-btn red" data-a="delcat" data-c="${c.id}">Delete</button></div>`;
+    c.items.forEach((it, i) => { h += `<div class="cm-item"><span class="n">${esc(it.name)}${it.type!=='both'?` <small style="color:var(--ink3)">(${it.type})</small>`:''}</span>
+      <button class="cm-btn" data-a="renameitem" data-c="${c.id}" data-i="${i}">Rename</button><button class="cm-btn" data-a="moveitem" data-c="${c.id}" data-i="${i}">Move</button><button class="cm-btn red" data-a="delitem" data-c="${c.id}" data-i="${i}">Del</button></div>`; });
+    h += `</div>`;
+  });
+  const known = new Set(lib.categories.map(catFull)), legacy = {};
+  getAllTxs().forEach(t => { if (!known.has(t.category)) legacy[t.category] = (legacy[t.category]||0) + 1; });
+  const lk = Object.keys(legacy);
+  if (lk.length) {
+    h += `<div class="cm-sec">Old categories still on your transactions (not in library)</div>`;
+    lk.forEach(k => { h += `<div class="cm-cat"><div class="cm-head"><span class="cm-name">${esc(k)}</span><span class="cm-tag">${legacy[k]} tx</span><button class="cm-btn acc" data-a="addlegacy" data-l="${esc(k)}">Add to library</button></div></div>`; });
+    h += `<div style="font-size:11px;color:var(--ink3)">These are untouched. We'll review and re-map them together in Stage 2.</div>`;
+  }
+  body.innerHTML = h;
+}
+function catsClick(e) {
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  const a = b.dataset.a, cid = b.dataset.c, idx = +b.dataset.i;
+  const lib = getLib(), cat = lib.categories.find(c => c.id === cid), item = cat?.items[idx];
+  if (a === 'addcat') {
+    const r = prompt('New category name (optionally start with an emoji, e.g. 🐶 Pets):'); if (!r || !r.trim()) return;
+    const {icon, name} = splitIcon(r);
+    if (lib.categories.some(c => c.name.toLowerCase() === name.toLowerCase())) { showToast('Category already exists'); return; }
+    mutateLib(l => l.categories.push({id:uid(), icon:icon||'📁', name, type:'both', role:'normal', items:[{name:'Other '+name, type:'both'}]}));
+  } else if (a === 'renamecat') {
+    const r = prompt('Rename category:', catFull(cat)); if (!r || !r.trim()) return;
+    const {icon, name} = splitIcon(r), oldFull = catFull(cat), newFull = (icon||cat.icon) + ' ' + name;
+    if (newFull === oldFull) return;
+    if (lib.categories.some(c => c.id !== cid && c.name.toLowerCase() === name.toLowerCase())) { showToast('Name already used'); return; }
+    const n = countTx(t => t.category === oldFull);
+    mutateLib(l => { const c = l.categories.find(x => x.id === cid); c.name = name; c.icon = icon || c.icon; });
+    if (n) renameTxs(t => t.category === oldFull, {category: newFull});
+    showToast(n ? `Renamed · ${n} transaction(s) updated` : 'Renamed ✓');
+  } else if (a === 'delcat') {
+    const full = catFull(cat), n = countTx(t => t.category === full);
+    if (!confirm(`Delete "${full}" from the library?` + (n ? `\n\n${n} existing transaction(s) keep this category label — nothing is deleted from your history.` : ''))) return;
+    mutateLib(l => { l.categories = l.categories.filter(c => c.id !== cid); });
+  } else if (a === 'additem') {
+    const r = prompt(`New item under ${cat.name}:`); if (!r || !r.trim()) return;
+    if (cat.items.some(i => i.name.toLowerCase() === r.trim().toLowerCase())) { showToast('Already exists'); return; }
+    mutateLib(l => l.categories.find(c => c.id === cid).items.push({name:r.trim(), type:'both'}));
+  } else if (a === 'renameitem') {
+    const r = prompt('Rename item:', item.name); if (!r || !r.trim() || r.trim() === item.name) return;
+    const full = catFull(cat), n = countTx(t => t.category === full && t.description === item.name), old = item.name;
+    mutateLib(l => { l.categories.find(c => c.id === cid).items[idx].name = r.trim(); });
+    if (n && confirm(`${n} existing transaction(s) use "${old}". Update their description to "${r.trim()}" too?\n\nOK = update them · Cancel = leave history as is`)) renameTxs(t => t.category === full && t.description === old, {description: r.trim()});
+  } else if (a === 'delitem') {
+    if (!confirm(`Delete "${item.name}" from the library?\n\nPast transactions keep their description.`)) return;
+    mutateLib(l => l.categories.find(c => c.id === cid).items.splice(idx, 1));
+  } else if (a === 'moveitem') {
+    const sel = document.createElement('select');
+    sel.innerHTML = '<option value="">Move to…</option>' + lib.categories.filter(c => c.id !== cid).map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+    b.replaceWith(sel);
+    sel.addEventListener('change', () => {
+      const to = lib.categories.find(c => c.id === sel.value); if (!to) return;
+      if (to.items.some(i => i.name.toLowerCase() === item.name.toLowerCase())) { showToast('Already exists there'); renderCats(); return; }
+      const from = catFull(cat), n = countTx(t => t.category === from && t.description === item.name);
+      mutateLib(l => { const f = l.categories.find(c => c.id === cid), t2 = l.categories.find(c => c.id === to.id); t2.items.push(f.items.splice(idx, 1)[0]); });
+      if (n && confirm(`${n} existing transaction(s) use "${item.name}" under ${from}. Re-file them under ${catFull(to)} too?\n\nOK = move them · Cancel = leave history as is`)) renameTxs(t => t.category === from && t.description === item.name, {category: catFull(to)});
+      renderCats(); showToast('Moved ✓');
+    });
+    return;
+  } else if (a === 'addlegacy') {
+    const full = b.dataset.l, {icon, name} = splitIcon(full), types = new Set(getAllTxs().filter(t => t.category === full).map(t => t.type));
+    mutateLib(l => l.categories.push({id:uid(), icon:icon||'📁', name, type: types.size === 1 ? [...types][0] : 'both', role:'normal', items:[]}));
+  }
+  renderCats();
 }
 
 // ══════════════════════════════════════════════════
@@ -919,12 +1086,20 @@ function importData(file) {
       const imported=JSON.parse(e.target.result);
       if (typeof imported!=='object'||Array.isArray(imported)) { showToast('❌ Invalid backup file'); return; }
       const current=loadData();
-      for (const year of Object.keys(imported)) {
+      for (const year of yearKeys(imported)) {
         if (!current[year]) current[year]={};
         for (const month of Object.keys(imported[year])) {
           if (!current[year][month]) { current[year][month]=imported[year][month]; }
           else { const ids=new Set(current[year][month].transactions.map(t=>t.id)); current[year][month].transactions.push(...imported[year][month].transactions.filter(t=>!ids.has(t.id))); }
         }
+      }
+      if (imported._categoryLibrary?.categories) { // merge library additively: new categories + new presets only
+        const lib = getLib(current);
+        imported._categoryLibrary.categories.forEach(ic => {
+          let c = lib.categories.find(x => x.name === ic.name);
+          if (!c) { lib.categories.push({...ic, id: uid()}); return; }
+          ic.items.forEach(it => { if (!c.items.some(x => x.name.toLowerCase() === it.name.toLowerCase())) c.items.push(it); });
+        });
       }
       saveData(current); closeBackup(); renderDashboard(); showToast('Data imported successfully ✓');
     } catch { showToast('❌ Could not read file'); }
@@ -1022,6 +1197,15 @@ document.getElementById('btn-export-csv-all').addEventListener('click',()=>{ exp
 document.getElementById('import-file-input').addEventListener('change',e=>importData(e.target.files[0]));
 document.getElementById('btn-clear-all').addEventListener('click',clearAllData);
 
+// Category manager + description presets
+document.getElementById('btn-cats').addEventListener('click',()=>{ renderCats(); document.getElementById('cats-overlay').classList.add('open'); });
+document.getElementById('cats-close').addEventListener('click',()=>{ document.getElementById('cats-overlay').classList.remove('open'); if(document.getElementById('modal-overlay').classList.contains('open'))setType(currentType,document.getElementById('f-category').value); });
+document.getElementById('cats-overlay').addEventListener('click',e=>{ if(e.target.id==='cats-overlay')document.getElementById('cats-close').click(); });
+document.getElementById('cats-body').addEventListener('click',catsClick);
+document.getElementById('f-category').addEventListener('change',refreshDesc);
+document.getElementById('f-desc').addEventListener('input',refreshDesc);
+document.getElementById('desc-save-lib').addEventListener('click',saveDescToLib);
+
 // Month CSV export (📊 icon in month header)
 document.getElementById('btn-export-month-csv').addEventListener('click',exportMonthCSV);
 
@@ -1055,6 +1239,7 @@ document.querySelectorAll('.mf-chip').forEach(chip=>{
 
 // ── Init ──────────────────────────────────────────
 registerSW();
+getLib();
 renderDashboard();
 </script>
 </body>
